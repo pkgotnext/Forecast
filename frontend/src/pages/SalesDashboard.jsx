@@ -27,20 +27,20 @@ export default function SalesDashboard() {
   const [recurringFilter, setRecurringFilter] = useState('')
   const [groupEditModal, setGroupEditModal] = useState(null)
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = { page, page_size: PAGE_SIZE, ...sort }
-      if (stageFilter) params.stage = stageFilter
-      if (recurringFilter === 'recurring') params.recurring = true
-      if (recurringFilter === 'normal') params.recurring = false
-      const { data } = await forecastApi.getMy(params)
-      setForecasts(data.items)
-      setTotal(data.total)
-    } finally {
-      setLoading(false)
-    }
-  }, [page, stageFilter, sort, recurringFilter])
+  const fetchData = useCallback(async (showLoader = true) => {
+  if (showLoader) setLoading(true)
+  try {
+    const params = { page, page_size: PAGE_SIZE, ...sort }
+    if (stageFilter) params.stage = stageFilter
+    if (recurringFilter === 'recurring') params.recurring = true
+    if (recurringFilter === 'normal') params.recurring = false
+    const { data } = await forecastApi.getMy(params)
+    setForecasts(data.items)
+    setTotal(data.total)
+  } finally {
+    setLoading(false)
+  }
+}, [page, stageFilter, sort, recurringFilter])
 
   const fetchStats = useCallback(async () => {
     setStatsLoading(true)
@@ -124,22 +124,7 @@ export default function SalesDashboard() {
             ))}
           </select>
 
-          <select
-            className="input w-auto"
-            value={`${sort.sort_by}:${sort.sort_dir}`}
-            onChange={(e) => {
-              const [sort_by, sort_dir] = e.target.value.split(':')
-              setSort({ sort_by, sort_dir })
-              setPage(1)
-            }}
-          >
-            <option value="expected_close_date:asc">Data zamknięcia ↑</option>
-            <option value="expected_close_date:desc">Data zamknięcia ↓</option>
-            <option value="deal_value:desc">Wartość ↓</option>
-            <option value="deal_value:asc">Wartość ↑</option>
-            <option value="probability:desc">Prawdopodobieństwo ↓</option>
-            <option value="client_name:asc">Klient A-Z</option>
-          </select>
+
 
           {(stageFilter || recurringFilter) && (
             <button onClick={() => { setStageFilter(''); setRecurringFilter(''); setPage(1) }} className="btn-ghost text-sm">
@@ -155,6 +140,11 @@ export default function SalesDashboard() {
           onEdit={(f) => setModal(f)}
           onEditGroup={(group) => setGroupEditModal(group)}
           onDelete={handleDelete}
+          sort={sort}
+          onSort={(sort_by, sort_dir) => {
+          setSort({ sort_by, sort_dir })
+          fetchData(false)
+        }}
         />
 
         {totalPages > 1 && (

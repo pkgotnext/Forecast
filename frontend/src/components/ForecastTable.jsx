@@ -38,7 +38,35 @@ const NoteCell = ({ notes, id, expandedNotes, toggleNote }) => {
   )
 }
 
-  export default function ForecastTable({ forecasts, loading, onEdit, onEditGroup, onDelete, showSalesPerson = false }) {
+const SORTABLE = {
+  client_name: 'left',
+  deal_value: 'right',
+  probability: 'right',
+  expected_close_date: 'left',
+  margin: 'right',
+}
+
+function SortTh({ colKey, sort, onSort, align = 'left', children }) {
+  const active = sort?.sort_by === colKey
+  const dir = active ? sort.sort_dir : null
+  const nextDir = !active ? 'asc' : dir === 'asc' ? 'desc' : null
+  return (
+    <th
+      className={`px-3 py-3 font-medium text-xs uppercase tracking-wide cursor-pointer select-none transition-colors ${align === 'right' ? 'text-right' : 'text-left'} ${active ? 'text-blue-500 bg-blue-50' : 'text-slate-500 hover:text-slate-700'}`}
+      onClick={() => onSort && (nextDir ? onSort(colKey, nextDir) : onSort('expected_close_date', 'asc'))}
+    >
+      <span className="inline-flex items-center gap-1">
+        <svg width="10" height="12" viewBox="0 0 10 12" fill="none">
+          <path d="M5 1L5 11M5 1L2 4M5 1L8 4" stroke={active && dir === 'asc' ? '#3b82f6' : active ? '#cbd5e1' : '#94a3b8'} strokeWidth="1.5" strokeLinecap="round"/>
+          <path d="M5 11L2 8M5 11L8 8" stroke={active && dir === 'desc' ? '#3b82f6' : active ? '#cbd5e1' : '#94a3b8'} strokeWidth="1.5" strokeLinecap="round"/>
+        </svg>
+        {children}
+      </span>
+    </th>
+  )
+}
+
+  export default function ForecastTable({ forecasts, loading, onEdit, onEditGroup, onDelete, showSalesPerson = false, sort, onSort, selected, onSelect, wdrozenieFilter, onWdrozenieFilter }) {
   const [historyForecast, setHistoryForecast] = useState(null)
   const [collapsedGroups, setCollapsedGroups] = useState({})
   const [showColumnPicker, setShowColumnPicker] = useState(false)
@@ -60,8 +88,37 @@ const NoteCell = ({ notes, id, expandedNotes, toggleNote }) => {
     return () => document.removeEventListener('mousedown', handler)
   }, [showColumnPicker])
   const v = visibleCols
+  const allIds = forecasts?.flatMap(f => f.recurring_group_id ? [] : [f.id]) ?? []
+  const allChecked = allIds.length > 0 && allIds.every(id => selected?.has(id))
+  const toggleAll = () => {
+    if (!onSelect) return
+    if (allChecked) {
+      const next = new Set(selected)
+      allIds.forEach(id => next.delete(id))
+      onSelect(next)
+    } else {
+      onSelect(new Set([...(selected ?? []), ...allIds]))
+    }
+  }
+  const toggleOne = (id) => {
+    if (!onSelect) return
+    const next = new Set(selected)
+    next.has(id) ? next.delete(id) : next.add(id)
+    onSelect(next)
+  }
 
-  if (loading) return (
+  const Checkbox = ({ checked, onChange, indeterminate = false }) => (
+    <input
+      type="checkbox"
+      checked={checked}
+      ref={el => { if (el) el.indeterminate = indeterminate }}
+      onChange={onChange}
+      onClick={e => e.stopPropagation()}
+      className="w-4 h-4 rounded border-slate-300 text-blue-500 accent-blue-500 cursor-pointer"
+    />
+  )
+
+  if (loading && !forecasts?.length) return (
     <div className="card overflow-hidden">
       <div className="animate-pulse p-8 text-center text-slate-400">Ładowanie</div>
     </div>
@@ -136,17 +193,30 @@ const NoteCell = ({ notes, id, expandedNotes, toggleNote }) => {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50">
+              {selected && <th className="px-3 py-3 w-10" />}
               {showSalesPerson && <th className="text-left px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Handlowiec</th>}
-              <th className="text-left px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Klient</th>
-              <th className="text-right px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Wartość</th>
-              <th className="text-right px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Prob.</th>
-              {v.wdrozenie && <th className="text-center px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Wdrożenie</th>}
+              <SortTh colKey="client_name" sort={sort} onSort={onSort} align="left">Klient</SortTh>
+              <SortTh colKey="deal_value" sort={sort} onSort={onSort} align="right">Wartość</SortTh>
+              <SortTh colKey="probability" sort={sort} onSort={onSort} align="right">Prob.</SortTh>
+              {v.wdrozenie && (
+  <th
+    className={`text-center px-3 py-3 font-medium text-xs uppercase tracking-wide cursor-pointer select-none transition-colors ${wdrozenieFilter ? 'text-blue-500 bg-blue-50' : 'text-slate-500 hover:text-slate-700'}`}
+    onClick={() => onWdrozenieFilter && onWdrozenieFilter(wdrozenieFilter === null ? 'tak' : wdrozenieFilter === 'tak' ? 'nie' : null)}
+  >
+    <span className="inline-flex items-center justify-center gap-1">
+      Wdrożenie
+      {wdrozenieFilter === 'tak' && <span className="ml-1 text-[10px] bg-emerald-100 text-emerald-700 rounded px-1">TAK</span>}
+      {wdrozenieFilter === 'nie' && <span className="ml-1 text-[10px] bg-red-100 text-red-500 rounded px-1">NIE</span>}
+      {!wdrozenieFilter && <span className="ml-1 text-slate-300 text-[10px]">○</span>}
+    </span>
+  </th>
+)}
               {v.producent && <th className="text-left px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Producent</th>}
               {v.faktura && <th className="text-left px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Faktura</th>}
               {v.platnosc && <th className="text-left px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Płatność</th>}
               {v.architektura && <th className="text-left px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Architektura</th>}
-              {v.kwartal && <th className="text-left px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Kwartał</th>}
-              {v.marza && <th className="text-right px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Marża</th>}
+              {v.kwartal && <SortTh colKey="expected_close_date" sort={sort} onSort={onSort} align="left">Kwartał</SortTh>}
+              {v.marza && <SortTh colKey="margin" sort={sort} onSort={onSort} align="right">Marża</SortTh>}
               {v.marza_wazona && <th className="text-right px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Marża ważona</th>}
               {v.etap && <th className="text-left px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Etap</th>}
               {v.notatki && <th className="text-left px-3 py-3 text-slate-500 font-medium text-xs uppercase tracking-wide">Notatki</th>}
@@ -171,6 +241,7 @@ const NoteCell = ({ notes, id, expandedNotes, toggleNote }) => {
                       onClick={() => toggleGroup(group.key)}
                       title={isCollapsed ? 'Rozwiń' : 'Zwiń'}
                     >
+                      {selected && <td className="px-3 py-3 w-10" onClick={e => e.stopPropagation()}><span className="text-slate-300 text-xs">—</span></td>}
                       {showSalesPerson && (
                         <td className="px-3 py-3 text-slate-700">
                           <div className="font-medium">{group.user_full_name || '—'}</div>
@@ -225,7 +296,8 @@ const NoteCell = ({ notes, id, expandedNotes, toggleNote }) => {
                     </tr>
 
                     {!isCollapsed && group.forecasts.map((f) => (
-                      <tr key={f.id} className="hover:bg-slate-50 transition-colors bg-violet-50/30 border-l-2 border-violet-200">
+                      <tr key={f.id} className={`hover:bg-slate-50 transition-colors border-l-2 border-violet-200 ${selected?.has(f.id) ? 'bg-blue-50' : 'bg-violet-50/30'}`}>
+                        {selected && <td className="px-3 py-3 w-10"><Checkbox checked={!!selected.has(f.id)} onChange={() => toggleOne(f.id)} /></td>}
                         {showSalesPerson && <td className="px-3 py-3" />}
                         <td className="px-3 py-3 pl-10">
                           <span className="text-slate-500 text-xs font-mono">{dateToQuarter(f.expected_close_date)}</span>
@@ -267,7 +339,8 @@ const NoteCell = ({ notes, id, expandedNotes, toggleNote }) => {
 
               const f = item.forecast
               return (
-                <tr key={f.id} className="hover:bg-slate-50 transition-colors">
+                <tr key={f.id} className={`hover:bg-slate-50 transition-colors ${selected?.has(f.id) ? 'bg-blue-50' : ''}`}>
+                  {selected && <td className="px-3 py-3 w-10"><Checkbox checked={!!selected.has(f.id)} onChange={() => toggleOne(f.id)} /></td>}
                   {showSalesPerson && (
                     <td className="px-3 py-3 text-slate-700">
                       <div className="font-medium">{f.user_full_name || '—'}</div>

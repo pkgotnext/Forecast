@@ -24,11 +24,11 @@ export default function ManagementDashboard() {
   const [statsLoading, setStatsLoading] = useState(true)
   const [filters, setFilters] = useState({ user_id: '', stage: '', date_from: '', date_to: '' })
   const [selectedQuarters, setSelectedQuarters] = useState([])
-const [quarterPickerOpen, setQuarterPickerOpen] = useState(false)
+  const [quarterPickerOpen, setQuarterPickerOpen] = useState(false)
   const [sort, setSort] = useState({ sort_by: 'expected_close_date', sort_dir: 'asc' })
-  const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
-  const PAGE_SIZE = 50
+  const [selected, setSelected] = useState(new Set())
+  const [wdrozenieFilter, setWdrozenieFilter] = useState(null)
+  const [exportOpen, setExportOpen] = useState(false)
   const [chartYear, setChartYear] = useState(2026)
   const [forecastChartExpanded, setForecastChartExpanded] = useState(false)
 
@@ -37,7 +37,7 @@ const [quarterPickerOpen, setQuarterPickerOpen] = useState(false)
   }, [])
 
   const buildParams = useCallback(() => {
-    const params = { page, page_size: PAGE_SIZE, ...sort }
+    const params = { page: 1, page_size: 500, ...sort }
     if (filters.user_id) params.user_id = filters.user_id
     if (filters.stage) params.stage = filters.stage
     if (filters.date_from) params.date_from = filters.date_from
@@ -45,14 +45,13 @@ const [quarterPickerOpen, setQuarterPickerOpen] = useState(false)
     if (filters.recurring === 'recurring') params.recurring = true
     if (filters.recurring === 'normal') params.recurring = false
     return params
-  }, [page, sort, filters])
+  }, [sort, filters])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
       const { data } = await forecastApi.getAll(buildParams())
       setForecasts(data.items)
-      setTotal(data.total)
     } finally {
       setLoading(false)
     }
@@ -74,6 +73,13 @@ const [quarterPickerOpen, setQuarterPickerOpen] = useState(false)
   useEffect(() => { fetchStats() }, [fetchStats])
 
   useEffect(() => {
+    if (!exportOpen) return
+    const handler = (e) => { if (!e.target.closest('[data-export-picker]')) setExportOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [exportOpen])
+
+  useEffect(() => {
     if (!quarterPickerOpen) return
     const handler = (e) => {
       if (!e.target.closest('[data-quarter-picker]')) setQuarterPickerOpen(false)
@@ -84,7 +90,7 @@ const [quarterPickerOpen, setQuarterPickerOpen] = useState(false)
 
   const handleFilter = (key, value) => {
     setFilters(f => ({ ...f, [key]: value }))
-    setPage(1)
+
   }
   const QUARTERS = [
   'Q1 2025','Q2 2025','Q3 2025','Q4 2025',
@@ -115,7 +121,7 @@ const toggleQuarter = (q) => {
     ? selectedQuarters.filter(x => x !== q)
     : [...selectedQuarters, q]
   setSelectedQuarters(next)
-  setPage(1)
+
   if (next.length === 0) {
     handleFilter('date_from', '')
     handleFilter('date_to', '')
@@ -128,6 +134,28 @@ const toggleQuarter = (q) => {
   handleFilter('date_to', maxTo)
 }
 
+  const handleExportCsv = () => {
+    const headers = ['Klient', 'Projekt', 'Wartość', 'Prawdopodobieństwo', 'Marża', 'Kwartał', 'Etap', 'Handlowiec']
+    const rows = forecasts.map(f => [
+      f.client_name,
+      f.project_name || '',
+      f.deal_value,
+      f.probability,
+      f.margin || '',
+      f.expected_close_date,
+      f.stage,
+      f.user_full_name || ''
+    ])
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `forecast_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    window.URL.revokeObjectURL(url)
+  }
+
   const handleExport = async () => {
     try {
       const params = {}
@@ -139,7 +167,7 @@ const toggleQuarter = (q) => {
       const url = window.URL.createObjectURL(new Blob([data], { type: 'application/xml' }))
       const a = document.createElement('a')
       a.href = url
-      a.download = 'forecasts.xml'
+      a.download = `forecast_${new Date().toISOString().slice(0, 10)}.xml`
       a.click()
       window.URL.revokeObjectURL(url)
     } catch (err) {
@@ -179,8 +207,6 @@ const toggleQuarter = (q) => {
     return Object.values(map).sort((a, b) => a.sortKey - b.sortKey)
   })()
 
-  const totalPages = Math.ceil(total / PAGE_SIZE)
-
   return (
     <div className="min-h-screen">
       <Navbar />
@@ -191,9 +217,18 @@ const toggleQuarter = (q) => {
             <h1 className="text-xl font-semibold text-slate-800">Dashboard Zarządu</h1>
             <p className="text-slate-500 text-sm mt-0.5">Przegląd forecastów sprzedażowych</p>
           </div>
-          <button className="btn-primary" onClick={handleExport}>
-            Eksportuj do pliku XML
-          </button>
+          <div className="relative" data-export-picker>
+            <button className="btn-primary flex items-center gap-2" onClick={() => setExportOpen(p => !p)}>
+              Eksportuj
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            </button>
+            {exportOpen && (
+              <div className="absolute right-0 top-10 z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 w-36">
+                <button onClick={() => { handleExport(); setExportOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Eksportuj XML</button>
+                <button onClick={() => { handleExportCsv(); setExportOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Eksportuj CSV</button>
+              </div>
+            )}
+          </div>
         </div>
 
         <StatsCards stats={stats} loading={statsLoading} />
@@ -390,7 +425,7 @@ const toggleQuarter = (q) => {
                   <p className="text-slate-600 dark:text-slate-400 text-sm font-medium">Kwartały</p>
                   {selectedQuarters.length > 0 && (
                     <button
-                      onClick={() => { setSelectedQuarters([]); handleFilter('date_from', ''); handleFilter('date_to', ''); setPage(1) }}
+                      onClick={() => { setSelectedQuarters([]); handleFilter('date_from', ''); handleFilter('date_to', ''); }}
                       className="text-xs text-blue-500 hover:text-blue-700"
                     >
                       Wyczyść
@@ -425,29 +460,14 @@ const toggleQuarter = (q) => {
             )}
           </div>
 
-          <select
-            className="input w-auto"
-            value={`${sort.sort_by}:${sort.sort_dir}`}
-            onChange={(e) => {
-              const [sort_by, sort_dir] = e.target.value.split(':')
-              setSort({ sort_by, sort_dir })
-              setPage(1)
-            }}
-          >
-            <option value="expected_close_date:asc">Data zamknięcia ↑</option>
-            <option value="expected_close_date:desc">Data zamknięcia ↓</option>
-            <option value="deal_value:desc">Wartość ↓</option>
-            <option value="deal_value:asc">Wartość ↑</option>
-            <option value="probability:desc">Prawdopodobieństwo ↓</option>
-            <option value="client_name:asc">Klient A-Z</option>
-          </select>
+
 
           {(filters.user_id || filters.stage || filters.date_from || filters.date_to || filters.recurring) && (
             <button
               onClick={() => {
                 setFilters({ user_id: '', stage: '', date_from: '', date_to: '', recurring: '' })
                 setSelectedQuarter([])
-                setPage(1)
+            
               }}
               className="btn-ghost text-sm"
             >
@@ -455,31 +475,38 @@ const toggleQuarter = (q) => {
             </button>
           )}
 
-          <span className="text-slate-600 text-sm ml-auto">{total} dealów</span>
+          <span className="text-slate-600 text-sm ml-auto">{forecasts.length} dealów</span>
         </div>
 
       </main>
 
         <div className="max-w-screen-2xl mx-auto">
+          {selected.size > 0 && (() => {
+            const selectedForecasts = forecasts.filter(f => selected.has(f.id))
+            const totalValue = selectedForecasts.reduce((s, f) => s + Number(f.deal_value), 0)
+            const totalMargin = selectedForecasts.reduce((s, f) => s + Number(f.margin || 0), 0)
+            const totalWeighted = selectedForecasts.reduce((s, f) => s + Number(f.weighted_margin || 0), 0)
+            return (
+              <div className="flex items-center gap-6 px-4 py-3 mb-2 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                <span className="text-blue-700 font-medium">{selected.size} zaznaczonych</span>
+                <span className="text-slate-500">Wartość: <span className="font-mono font-semibold text-slate-800">{totalValue.toLocaleString('pl-PL', { style: 'currency', currency: 'PLN', maximumFractionDigits: 0 })}</span></span>
+                <span className="text-slate-500">Marża: <span className="font-mono font-semibold text-emerald-700">{totalMargin.toLocaleString('pl-PL', { style: 'currency', currency: 'PLN', maximumFractionDigits: 0 })}</span></span>
+                <span className="text-slate-500">Marża ważona: <span className="font-mono font-semibold text-emerald-600">{totalWeighted.toLocaleString('pl-PL', { style: 'currency', currency: 'PLN', maximumFractionDigits: 0 })}</span></span>
+                <button onClick={() => setSelected(new Set())} className="ml-auto text-blue-500 hover:text-blue-700 text-xs">Wyczyść</button>
+              </div>
+            )
+          })()}
           <ForecastTable
-            forecasts={forecasts}
+            forecasts={wdrozenieFilter ? forecasts.filter(f => f.wdrozenie === wdrozenieFilter) : forecasts}
             loading={loading}
             showSalesPerson={true}
+            sort={sort}
+            onSort={(sort_by, sort_dir) => setSort(sort_by ? { sort_by, sort_dir } : { sort_by: 'expected_close_date', sort_dir: 'asc' })}
+            selected={selected}
+            onSelect={setSelected}
+            wdrozenieFilter={wdrozenieFilter}
+            onWdrozenieFilter={setWdrozenieFilter}
           />
-        </div>
-
-        <div className="max-w-screen-2xl mx-auto">
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2">
-              <button className="btn-ghost text-sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>
-                Poprzednia
-              </button>
-              <span className="text-slate-500 text-sm font-mono">{page} / {totalPages}</span>
-              <button className="btn-ghost text-sm" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>
-                Następna
-              </button>
-            </div>
-          )}
         </div>
     </div>
   )
